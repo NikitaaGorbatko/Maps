@@ -1,7 +1,7 @@
 package nikitagorbatko.example.maps
 
+
 import android.graphics.Color
-import android.graphics.Paint
 import android.os.Bundle
 import android.widget.Button
 import android.widget.Toast
@@ -10,7 +10,6 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.*
-import kotlin.math.acos
 import kotlin.math.atan
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -23,11 +22,14 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
     private lateinit var buttonAB: Button
-    private var flagA: Boolean = false
-    private var flagB: Boolean = false
     private var options: MarkerOptions? = null
     private var latLngA: LatLng? = null
     private var latLngB: LatLng? = null
+
+    private var northeast: LatLng? = null
+    private var southwest: LatLng? = null
+    private var northwest: LatLng? = null
+    private var southeast: LatLng? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,9 +61,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         buttonAB.isEnabled = true
-        val bounds = mMap.projection.visibleRegion.latLngBounds
-
-
+        //(y1 - y2)x + (x2 - x1)y + (x1y2 - x2y1) = 0
         mMap.setOnMapClickListener {
             if (latLngA != null && latLngB != null) return@setOnMapClickListener
 
@@ -103,17 +103,46 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             )
 
             val a = round(getLength(latLngA, latLngC))
-            val b = round(getLength(latLngA, latLngB))
-            val c = round(getLength(latLngB, latLngC))
+            val b = round(getLength(latLngB, latLngC))
 
             val cornerA = round(getDegreesA(a, b))
             val cornerB = round(180 - 90 - cornerA)
+            //longitude - Долгота x
+            //latitude - широта y
 
-            Toast.makeText(baseContext, "$cornerA \n $cornerB \n${cornerA + cornerB}", Toast.LENGTH_LONG).show()
+            val dotsRight = Computer.isCrossed(latLngA!!, latLngB!!, northeast!!, southeast!!)
+            val dotsLeft = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, southwest!!)
+            val dotsTop = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, northeast!!)
+            val dotsBottom = Computer.isCrossed(latLngA!!, latLngB!!, southeast!!, southwest!!)
 
+            val polylineAx = mMap.addPolyline(
+                PolylineOptions()
+                    .add(dotsLeft, dotsRight)
+                    .width(3f)
+                    .color(Color.BLUE)
+                    .jointType(JointType.ROUND)
+            )
+
+            val polylineAc = mMap.addPolyline(
+                PolylineOptions()
+                    .add(dotsTop, dotsBottom)
+                    .width(3f)
+                    .color(Color.BLUE)
+                    .jointType(JointType.ROUND)
+            )
+
+            Toast.makeText(baseContext, "$cornerA \n$cornerB", Toast.LENGTH_LONG).show()
             mMap.addMarker(options)
-            flagA = true
         }
+
+        mMap.setOnCameraIdleListener {
+            northeast = mMap.projection.visibleRegion.latLngBounds.northeast
+            southwest = mMap.projection.visibleRegion.latLngBounds.southwest
+            northwest = LatLng(northeast!!.latitude, southwest!!.longitude)
+            southeast = LatLng(southwest!!.latitude, northeast!!.longitude)
+        }
+
+        //mMap.setOnC
         //mMap.addMarker(MarkerOptions().position(sydney).title("Marker in Sydney"))
         //mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))
     }
@@ -124,7 +153,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun getLength(first: LatLng?, second: LatLng?)
             = sqrt((second!!.longitude - first!!.longitude).pow(2) +
-            (second!!.latitude - first!!.latitude).pow(2))
+                (second!!.latitude - first!!.latitude).pow(2))
 
     private fun getDegreesA(a: Double, b: Double): Double = radianToDegree(atan(a / b))
 
