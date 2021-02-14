@@ -31,7 +31,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private var southwest: LatLng? = null
     private var northwest: LatLng? = null
     private var southeast: LatLng? = null
-    private val DISTANCEM = 0.00018
+    private val distanceM = 0.00018
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,9 +62,15 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         buttonAB.isEnabled = true
+
         mMap.moveCamera(CameraUpdateFactory.newLatLng(sydneyLatLng))
+        mMap.moveCamera(CameraUpdateFactory.zoomTo(15f))
 
         mMap.setOnMapClickListener {
+            if (mMap.cameraPosition.zoom < 15) {
+                Toast.makeText(baseContext, resources.getString(R.string.zoom_is_unavailable), Toast.LENGTH_LONG).show()
+                return@setOnMapClickListener
+            }
             if (latLngA != null && latLngB != null) return@setOnMapClickListener
 
             if (latLngA == null) {
@@ -94,13 +100,12 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         }
 
         mMap.setOnCameraIdleListener {
+            if (latLngA == null && latLngB == null) return@setOnCameraIdleListener
+            if (mMap.cameraPosition.zoom < 15) {
+                Toast.makeText(baseContext, resources.getString(R.string.zoom_is_unavailable), Toast.LENGTH_LONG).show()
+                return@setOnCameraIdleListener
+            }
             mMap.clear()
-
-            northeast = mMap.projection.visibleRegion.latLngBounds.northeast
-            southwest = mMap.projection.visibleRegion.latLngBounds.southwest
-            northwest = LatLng(northeast!!.latitude, southwest!!.longitude)
-            southeast = LatLng(southwest!!.latitude, northeast!!.longitude)
-
             try {
                 addMarker(latLngA!!, "A")
                 addMarker(latLngB!!, "B")
@@ -110,12 +115,13 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-    //hardcode
+    //hardcoded, не рефакторил, есть проблемы с геометрией
     private fun draw() {
-        val dotsRight = Computer.isCrossed(latLngA!!, latLngB!!, northeast!!, southeast!!)
-        val dotsLeft = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, southwest!!)
-        val dotsTop = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, northeast!!)
-        val dotsBottom = Computer.isCrossed(latLngA!!, latLngB!!, southeast!!, southwest!!)
+        val visibleBounds = mMap.projection.visibleRegion.latLngBounds
+        northeast = mMap.projection.visibleRegion.latLngBounds.northeast
+        southwest = mMap.projection.visibleRegion.latLngBounds.southwest
+        northwest = LatLng(northeast!!.latitude, southwest!!.longitude)
+        southeast = LatLng(southwest!!.latitude, northeast!!.longitude)
 
         val latLngC = Computer.getLatLangC(latLngA, latLngB)
 
@@ -126,96 +132,83 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
         val cornerA = Computer.getDegreesA(a, b)
         val cornerB = 180 - 90 - cornerA
+        val corner = if (cornerA > cornerB) cornerB else cornerA
 
-        val latLngRightCross = Computer.isCrossed(
-            latLngA!!,
-            latLngB!!,
-            northeast!!,
-            southeast!!
-        )
-        val latLngLeftCross = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, southwest!!)
-        val latLngTopCross = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, northeast!!)
-        val latLngBottomCross = Computer.isCrossed(
-            latLngA!!,
-            latLngB!!,
-            southeast!!,
-            southwest!!
-        )
-        val step: Double
+        val latLngRCross = Computer.isCrossed(latLngA!!, latLngB!!, northeast!!, southeast!!)
+        val latLngLCross = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, southwest!!)
+        val latLngTCross = Computer.isCrossed(latLngA!!, latLngB!!, northwest!!, northeast!!)
+        val latLngBCross = Computer.isCrossed(latLngA!!, latLngB!!, southeast!!, southwest!!)
+        val sinc = sin(corner)
+        val step = distanceM / sinc
 
-        if (Computer.getLength(latLngLeftCross, latLngRightCross) > Computer.getLength(
-                latLngTopCross,
-                latLngBottomCross
+        if (Computer.getLength(latLngLCross, latLngRCross) > Computer.getLength(
+                latLngTCross,
+                latLngBCross
             )) {
-            mMap.addPolyline(buildOptions(latLngTopCross, latLngBottomCross))
-            step = DISTANCEM / sin(cornerA)
-            var i = 20
-            var counter1 = latLngTopCross!!.longitude + step
-            var counter2 = latLngBottomCross!!.longitude + step
+            mMap.addPolyline(buildOptions(latLngTCross, latLngBCross))
+            var counter1 = latLngTCross!!.longitude + step
+            var counter2 = latLngBCross!!.longitude + step
 
-            while (mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter1, latLngTopCross.latitude)) || mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter2, latLngBottomCross.latitude))) {
+            while (visibleBounds.contains(LatLng(latLngTCross.latitude, counter1))
+                || visibleBounds.contains(LatLng(latLngBCross.latitude, counter2))) {
                 mMap.addPolyline(
                     buildOptions(
-                        LatLng(counter1, latLngTopCross.latitude), LatLng(
-                            counter2,
-                            latLngBottomCross.latitude
+                        LatLng(latLngTCross.latitude, counter1), LatLng(
+                            latLngBCross.latitude,
+                            counter2
                         )
                     )
                 )
                 counter1 += step
                 counter2 += step
-                i--
             }
-            counter1 = latLngTopCross.longitude - step
-            counter2 = latLngBottomCross.longitude - step
-            var k = 20
-            while (mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter1, latLngTopCross.latitude)) || mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter2, latLngBottomCross.latitude))) {
+            counter1 = latLngTCross.longitude - step
+            counter2 = latLngBCross.longitude - step
+            while (visibleBounds.contains(LatLng(latLngTCross.latitude, counter1))
+                || visibleBounds.contains(LatLng(latLngBCross.latitude, counter2))) {
                 mMap.addPolyline(
                     buildOptions(
-                        LatLng(counter1, latLngTopCross.latitude), LatLng(
-                            counter2,
-                            latLngBottomCross.latitude
+                        LatLng(latLngTCross.latitude, counter1), LatLng(
+                            latLngBCross.latitude,
+                            counter2
                         )
                     )
                 )
                 counter1 -= step
                 counter2 -= step
-                k--
             }
         } else {
-            mMap.addPolyline(buildOptions(latLngLeftCross, latLngRightCross))
-            step = DISTANCEM / sin(cornerB)
-            var i = 20
-            var counter1 = latLngLeftCross!!.latitude + step
-            var counter2 = latLngRightCross!!.latitude + step
-            while (mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter1, latLngLeftCross.longitude)) || mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter2, latLngRightCross.longitude))) {
+            mMap.addPolyline(buildOptions(latLngLCross, latLngRCross))
+            var counter1 = latLngLCross!!.latitude + step
+            var counter2 = latLngRCross!!.latitude + step
+            while (visibleBounds.contains(LatLng(counter1, latLngLCross.longitude))
+                || visibleBounds.contains(LatLng(counter2, latLngRCross.longitude))) {
                 mMap.addPolyline(
                     buildOptions(
-                        LatLng(counter1, latLngLeftCross.longitude), LatLng(
+                        LatLng(counter1, latLngLCross.longitude), LatLng(
                             counter2,
-                            latLngRightCross.longitude
+                            latLngRCross.longitude
                         )
                     )
                 )
                 counter1 += step
                 counter2 += step
-                i--
             }
-            counter1 = latLngLeftCross.latitude - step
-            counter2 = latLngRightCross.latitude - step
-            var k = 20
-            while (mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter1, latLngLeftCross.longitude)) || mMap.projection.visibleRegion.latLngBounds.contains(LatLng(counter2, latLngRightCross.longitude))) {
+            counter1 = latLngLCross.latitude - step
+            counter2 = latLngRCross.latitude - step
+
+            while (visibleBounds.contains(LatLng(counter1, latLngLCross.longitude))
+                || visibleBounds.contains(LatLng(counter2, latLngRCross.longitude))) {
                 mMap.addPolyline(
                     buildOptions(
-                        LatLng(counter1, latLngLeftCross.longitude), LatLng(
+                        LatLng(counter1, latLngLCross.longitude), LatLng(
                             counter2,
-                            latLngRightCross.longitude
+                            latLngRCross.longitude
                         )
                     )
                 )
                 counter1 -= step
                 counter2 -= step
-                k--
             }
         }
     }
